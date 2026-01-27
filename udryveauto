@@ -1,0 +1,236 @@
+Project Name: UdryveAuto
+Instruction Type: Full system generation + clone-based refactor
+
+PROMPT START
+
+Clone the existing project UdryveFood into a new, completely separate project named UdryveAuto.
+Do NOT modify UdryveFood.
+UdryveAuto must reuse the same architecture, database patterns, authentication system, role-based access control, admin tooling, and UI structure as UdryveFood, but adapt all business logic and UI for an auto parts marketplace.
+
+1) Core Concept
+
+UdryveAuto is an auto parts marketplace similar to Uber Eats, where:
+
+Stores (partners) replace restaurants
+
+Shipping is primary, local delivery optional
+
+Customers must verify part fitment before ordering
+
+Stores must approve fitment before checkout is allowed
+
+Refunds are disabled unless store verification is proven wrong
+
+2) User Roles (must match UdryveFood patterns)
+
+Reuse UdryveFood RBAC and permissions exactly, with renamed roles:
+
+Admin
+
+Full system access
+
+View and impersonate all roles and pages
+
+Approve / disable stores, customers, couriers
+
+View all messages, orders, disputes
+
+Store (Partner)
+
+Apply to register (approval required)
+
+Full access to inventory management
+
+Messaging with customers
+
+Fitment verification responsibility
+
+Fulfillment, payouts, returns policy control
+
+Customer
+
+Browse parts
+
+Save vehicles
+
+Message stores
+
+Must complete 3-step verification before ordering
+
+Courier (optional / feature-flagged)
+
+Only for local delivery
+
+Job acceptance, tracking, payouts
+
+3) Store Partner Registration & Approval
+
+Create a public “Become a Partner” flow:
+
+Multi-step application form
+
+Business info, fulfillment type, returns policy
+
+Upload documents (license, resale cert)
+
+Choose catalog source (manual, CSV, WooCommerce API)
+
+Admin dashboard:
+
+Application queue (pending / approved / rejected)
+
+Messaging with applicants
+
+Approve → Store dashboard access unlocked
+
+4) Inventory & Open-Source Integration
+
+Stores must have full inventory control:
+
+Manual product creation
+
+CSV import/export
+
+WooCommerce REST API connector (phase 1)
+
+Product fields: SKU, MPN, specs, images, weight, dimensions
+
+Inventory sync & pricing rules
+
+5) Mandatory Store ↔ Customer Messaging
+
+Implement a built-in messaging system, cloned from UdryveFood chat patterns but enhanced:
+
+Product-level messaging (“Ask about fitment”)
+
+Cart-level verification messaging
+
+Order-level messaging (persistent)
+
+Admin must be able to view all messages.
+
+6) HARD GATED 3-STEP VERIFICATION SYSTEM (NO BYPASS)
+
+Checkout must be blocked until ALL steps are completed.
+
+STEP 1 — Vehicle Verification (Customer)
+
+Save/select vehicle: Year, Make, Model, Trim, Engine
+
+Optional VIN (strongly encouraged)
+
+Customer must explicitly confirm vehicle accuracy
+
+STEP 2 — Part Confirmation (Customer)
+
+Confirm exact part number (SKU / MPN)
+
+Confirm specs (side, size, compatibility notes)
+
+Confirm quantity
+
+Checkbox: “I confirm this is the part I need”
+
+STEP 3 — Store Fitment Verification (REQUIRED)
+
+Store must explicitly mark one:
+
+✅ Verified Fit
+
+⚠️ Conditional (request more info)
+
+❌ Not Compatible
+
+Store verification must be recorded immutably:
+
+store_user_id
+
+timestamp
+
+vehicle snapshot JSON
+
+part snapshot JSON
+
+notes / evidence (VIN, photos)
+
+Only after Verified Fit → checkout enabled
+
+7) Order & Refund Enforcement
+
+No refunds for customer error
+
+Refunds allowed ONLY if:
+
+Store verified fit incorrectly
+
+Wrong/damaged item shipped
+
+Non-delivery
+
+Admin dispute review system
+
+All decisions logged
+
+8) Payments & Payouts
+
+Clone UdryveFood payment flow:
+
+PayPal checkout
+
+PayPal payouts to stores
+
+Admin commission system
+
+Payout dashboard for stores
+
+9) Admin Superpowers (Must Match UdryveFood)
+
+Admin must be able to:
+
+View system as Customer / Store / Courier
+
+Disable any account instantly
+
+View all inventory across all stores
+
+View all verification logs
+
+Override fitment decisions (logged)
+
+10) UI / UX Requirements
+
+Preserve UdryveFood UI structure and routing
+
+Rename and restyle for auto parts
+
+Clear verification badges:
+
+Pending
+
+Verified
+
+Needs Info
+
+Checkout disabled messaging explaining why
+
+11) Technical Requirements
+
+Same tech stack as UdryveFood
+
+Same auth, middleware, DB patterns
+
+New database namespace/tables where needed
+
+Feature flags for courier delivery
+
+Google Maps ONLY (for pickup/local delivery)
+
+12) Project Rules (Critical)
+
+UdryveFood must remain untouched
+
+UdryveAuto must be a full clone with refactored logic
+
+Shared code allowed only if abstracted safely
+
+All verification and messaging must be auditable![alt text](image.png)

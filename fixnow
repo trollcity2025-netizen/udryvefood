@@ -1,0 +1,200 @@
+Trae.ai Prompt (All-in-one)
+
+You are working inside my existing UdryveFood codebase (UberEats-style). I need you to implement a production-grade HR / onboarding approval system for Drivers and Restaurants, and also remove all mock data + mock systems across the entire project. Treat this as a full refactor + feature build. Do not leave any fake/demo placeholders.
+
+1) Core Requirement: “Signup” ≠ “Approved”
+
+Drivers and Restaurants must be able to create an account, but they cannot access operational features until they submit an application and it is approved by Admin.
+
+Implement these statuses (for both Drivers and Restaurants):
+
+draft (account created, no application submitted)
+
+submitted (application submitted, awaiting review)
+
+under_review
+
+approved
+
+rejected
+
+disabled (admin can disable at any time)
+
+Access control:
+
+If not approved, block all driver/restaurant operational pages and APIs. Show a clear “Application Pending / Not Approved” screen.
+
+If disabled, block login or block access with “Account Disabled” screen.
+
+Only Admin can approve/reject/disable.
+
+2) HR / Application System (Driver + Restaurant)
+
+Create database tables and APIs for applications:
+
+driver_applications
+
+restaurant_applications
+
+Each application must include:
+Driver application fields
+
+legal_name, phone, email, DOB (if required), address
+
+driver_license_number + expiration, license_state
+
+vehicle info (make/model/year/color/plate)
+
+insurance provider + policy number + expiration
+
+background check consent checkbox
+
+identity verification doc uploads (front/back ID)
+
+profile photo upload
+
+tax/payout details (PayPal email for payouts)
+
+emergency contact
+
+Restaurant application fields
+
+restaurant_name, owner_name, phone, email, address
+
+business license / tax ID upload
+
+food handler / permits upload (optional)
+
+banking/payout (PayPal email)
+
+operating hours
+
+cuisine categories
+
+logo + cover photo uploads
+
+menu onboarding readiness (checkbox + notes)
+
+Document handling:
+
+Implement secure upload storage (choose a real method already in project or implement one: local /uploads for dev + S3-ready adapter). No fake upload stubs.
+
+Save file metadata in DB (url/path, mime, size, uploaded_at).
+
+Add validation (file type + size), and protect routes.
+
+Workflow:
+
+Applicant fills application → submit → status becomes submitted.
+
+Admin dashboard: list applications with filters (status, date, name).
+
+Admin can open an application, review documents, add internal notes, and set status to approved or rejected.
+
+On approve: mark the driver/restaurant as approved and unlock full access.
+
+On reject: keep account but block operations; allow re-apply (create new application version or resubmit).
+
+3) Admin HR Dashboard + Tools
+
+Add an “HR / Applications” section in Admin:
+
+Tabs: Drivers | Restaurants
+
+Table view: applicant, created date, status, last updated, quick actions
+
+Detail view: application fields + document viewer + internal notes + audit trail
+
+Actions: Approve, Reject (with reason), Request Changes (sets status under_review and sends message), Disable account
+
+Add “Compliance checklist” UI (simple checkboxes stored in DB, e.g., ID verified, insurance verified, license verified, business verified, etc.)
+
+Notifications:
+
+In-app notifications for applicants: submitted, under_review, approved, rejected (with reason), disabled
+
+Optional email hooks if project supports it (don’t add fake emailing; use real provider only if configured)
+
+Audit logs:
+
+Log every status change with admin_id, timestamp, old_status, new_status, reason.
+
+4) Remove ALL Mock Data / Mock Systems (Full Production Cleanup)
+
+Go through the entire codebase and:
+
+Delete mock JSON files, seed demo content, placeholder arrays, fake API responders, “mockService”, “dummyData”, “sampleData”, “lorem ipsum”, hardcoded listings, and any UI showing fake orders/drivers/restaurants.
+
+Replace with real database calls and real API endpoints.
+
+Ensure every page pulls real data and handles empty states properly (no fake cards).
+
+If some feature is incomplete:
+
+Implement it fully (backend + frontend) OR gracefully hide it behind a “Coming soon” feature flag (but no mock content).
+
+5) Routing, Menus, Profiles, and Page Correctness
+
+Verify all navigation and role routing:
+
+Admin sees Admin menu + can switch to “View as Driver” and “View as Restaurant” read-only preview (no privilege escalation).
+
+Drivers see driver-only pages (only if approved).
+
+Restaurants see restaurant-only pages (only if approved).
+
+Customers remain unchanged.
+
+Fix:
+
+Broken links, wrong routes, incorrect page content, missing loaders, missing empty states.
+
+Profile pages must show correct user data and allow editing where appropriate.
+
+Ensure Google Maps integration only where intended (no placeholder maps).
+
+6) API + Security + Validation
+
+Add server-side validation for all forms.
+
+Protect all endpoints with auth + role middleware + approval middleware.
+
+Prevent horizontal privilege escalation (driver cannot access other driver data, restaurant cannot access other restaurant data).
+
+Ensure PayPal payout email is validated and stored securely.
+
+7) Database + Migrations
+
+Create migrations for new tables/columns and ensure production-safe schema updates:
+
+Add approval fields to drivers and restaurants (status, approved_at, approved_by, disabled_at, disabled_by, rejection_reason).
+
+Add application tables with foreign keys.
+
+Add file uploads table if needed.
+
+Add audit_logs entries for actions.
+
+8) Acceptance Checklist (Must Pass)
+
+New driver/restaurant can sign up → forced to application flow → cannot operate until approved.
+
+Admin can review and approve/reject/disable.
+
+Approved users gain access immediately.
+
+No mock data remains anywhere.
+
+All menus, pages, and routes load correct real content.
+
+Clean UX for loading/empty/error states.
+
+End-to-end test or at least a runnable test plan included.
+
+Deliverables:
+
+Implement backend + frontend changes.
+
+Provide a short migration + deployment note.
+
+Provide a quick QA checklist with URLs/routes to verify.

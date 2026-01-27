@@ -1,0 +1,365 @@
+-- COMBINED MIGRATION FILE
+-- Generated for ease of use in Supabase SQL Editor
+
+-- ==========================================
+-- 1. INITIAL SCHEMA (0000_init.sql)
+-- ==========================================
+
+-- Enable UUID extension
+create extension if not exists "uuid-ossp";
+
+-- Create types if they don't exist
+do $$ begin
+    if not exists (select 1 from pg_type where typname = 'user_role') then
+        create type user_role as enum ('admin', 'driver', 'restaurant', 'customer');
+    end if;
+    if not exists (select 1 from pg_type where typname = 'user_status') then
+        create type user_status as enum ('active', 'disabled', 'pending_approval');
+    end if;
+    if not exists (select 1 from pg_type where typname = 'order_status') then
+        create type order_status as enum ('pending', 'accepted', 'preparing', 'ready_for_pickup', 'picked_up', 'in_transit', 'delivered', 'cancelled');
+    end if;
+    if not exists (select 1 from pg_type where typname = 'payment_status') then
+        create type payment_status as enum ('pending', 'completed', 'refunded', 'failed');
+    end if;
+end $$;
+
+-- USERS TABLE (Managed by Supabase Auth, but we'll reference it in public tables)
+create table if not exists public.users (
+  id uuid references auth.users on delete cascade primary key,
+  email text unique not null,
+  role user_role not null default 'customer',
+  status user_status not null default 'active',
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Ensure columns exist (if table was created without them)
+do $$
+begin
+    if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'users' and column_name = 'role') then
+        alter table public.users add column role user_role not null default 'customer';
+    end if;
+    if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'users' and column_name = 'status') then
+        alter table public.users add column status user_status not null default 'active';
+    end if;
+end $$;
+
+-- Enable RLS
+alter table public.users enable row level security;
+
+-- PROFILES
+
+create table if not exists public.driver_profiles (
+  user_id uuid references public.users(id) on delete cascade primary key,
+  vehicle_type text,
+  vehicle_plate text,
+  is_online boolean default false,
+  current_lat double precision,
+  current_lng double precision,
+  last_updated timestamp with time zone
+);
+
+create table if not exists public.restaurant_profiles (
+  user_id uuid references public.users(id) on delete cascade primary key,
+  restaurant_name text not null,
+  address text not null,
+  latitude double precision,
+  longitude double precision,
+  image_url text,
+  is_open boolean default true
+);
+
+create table if not exists public.customer_profiles (
+  user_id uuid references public.users(id) on delete cascade primary key,
+  phone text,
+  default_address text,
+  default_lat double precision,
+  default_lng double precision
+);
+
+-- MENU ITEMS
+
+create table if not exists public.menu_items (
+  id uuid default uuid_generate_v4() primary key,
+  restaurant_id uuid references public.restaurant_profiles(user_id) on delete cascade not null,
+  name text not null,
+  description text,
+  price decimal(10,2) not null,
+  image_url text,
+  is_available boolean default true,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- ORDERS
+
+create table if not exists public.orders (
+  id uuid default uuid_generate_v4() primary key,
+  customer_id uuid references public.users(id) not null,
+  restaurant_id uuid references public.restaurant_profiles(user_id) not null,
+  driver_id uuid references public.driver_profiles(user_id),
+  status order_status default 'pending',
+  total_amount decimal(10,2) not null,
+  delivery_address text not null,
+  delivery_lat double precision,
+  delivery_lng double precision,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create table if not exists public.order_items (
+  id uuid default uuid_generate_v4() primary key,
+  order_id uuid references public.orders(id) on delete cascade not null,
+  menu_item_id uuid references public.menu_items(id) not null,
+  quantity integer not null default 1,
+  price_at_time decimal(10,2) not null
+);
+
+-- PAYMENTS / PAYOUTS (PayPal Tracking)
+
+create table if not exists public.payments (
+  id uuid default uuid_generate_v4() primary key,
+  order_id uuid references public.orders(id) not null,
+  paypal_order_id text not null,
+  amount decimal(10,2) not null,
+  status payment_status default 'pending',
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create table if not exists public.payouts (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.users(id) not null,
+  amount decimal(10,2) not null,
+  paypal_payout_id text,
+  status text default 'pending', -- pending, processed
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- POLICIES
+
+-- Users
+drop policy if exists "Users can view own profile" on public.users;
+create policy "Users can view own profile" on public.users for select using (auth.uid() = id);
+
+drop policy if exists "Admins can view all users" on public.users;
+create policy "Admins can view all users" on public.users for select using (exists (select 1 from public.users where id = auth.uid() and role = 'admin'));
+
+-- Restaurants
+drop policy if exists "Public can view restaurants" on public.restaurant_profiles;
+create policy "Public can view restaurants" on public.restaurant_profiles for select using (true);
+
+-- Menu Items
+drop policy if exists "Public can view menu items" on public.menu_items;
+create policy "Public can view menu items" on public.menu_items for select using (true);
+
+-- ==========================================
+-- 2. AUTH TRIGGERS (0001_auth_trigger.sql)
+-- ==========================================
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  user_role user_role;
+  user_full_name text;
+begin
+  -- Get role and full name from metadata (default to customer if missing)
+  user_role := COALESCE((new.raw_user_meta_data->>'role')::user_role, 'customer');
+  user_full_name := COALESCE(new.raw_user_meta_data->>'full_name', '');
+
+  -- Insert into public.users
+  insert into public.users (id, email, role, status)
+  values (new.id, new.email, user_role, 'active');
+
+  -- Create profile based on role
+  if user_role = 'driver' then
+    insert into public.driver_profiles (user_id) values (new.id);
+  elsif user_role = 'restaurant' then
+    -- For restaurant, we might need more info, but we'll insert a placeholder
+    insert into public.restaurant_profiles (user_id, restaurant_name, address) 
+    values (new.id, user_full_name || '''s Restaurant', 'Address Pending');
+  elsif user_role = 'customer' then
+    insert into public.customer_profiles (user_id) values (new.id);
+  end if;
+
+  return new;
+end;
+$$;
+
+-- Trigger execution
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+
+-- ==========================================
+-- 3. SEED FUNCTIONS (0002_seed_function.sql)
+-- ==========================================
+
+-- Seed Data for Demo Restaurant
+create or replace function public.seed_sample_menu()
+returns void
+language plpgsql
+security definer
+as $$
+declare
+  curr_user_id uuid;
+begin
+  curr_user_id := auth.uid();
+  
+  if curr_user_id is null then
+    raise exception 'Not logged in';
+  end if;
+
+  -- Ensure profile exists
+  insert into public.restaurant_profiles (user_id, restaurant_name, address, image_url)
+  values (curr_user_id, 'My Demo Restaurant', '123 Food St', 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80')
+  on conflict (user_id) do update set restaurant_name = 'My Demo Restaurant';
+
+  -- Insert Menu Items
+  insert into public.menu_items (restaurant_id, name, description, price, image_url)
+  values 
+    (curr_user_id, 'Classic Burger', 'Juicy beef patty with cheese and lettuce', 12.99, 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800&q=80'),
+    (curr_user_id, 'Pepperoni Pizza', 'Classic pepperoni with mozzarella', 15.50, 'https://images.unsplash.com/photo-1628840042765-356cda07504e?w=800&q=80'),
+    (curr_user_id, 'Caesar Salad', 'Fresh romaine with parmesan and croutons', 9.99, 'https://images.unsplash.com/photo-1550304943-4f24f54ddde9?w=800&q=80');
+
+end;
+$$;
+
+
+-- ==========================================
+-- 4. ADMIN FUNCTIONS (0003_admin_func.sql)
+-- ==========================================
+
+-- Function to promote a user to admin by email
+-- Usage: select promote_to_admin('admin@example.com');
+
+create or replace function public.promote_to_admin(user_email text)
+returns void
+language plpgsql
+security definer
+as $$
+declare
+  target_user_id uuid;
+begin
+  -- Find user by email in public.users
+  select id into target_user_id
+  from public.users
+  where email = user_email;
+
+  if target_user_id is null then
+    raise exception 'User with email % not found in public.users', user_email;
+  end if;
+
+  -- Update public.users role
+  update public.users
+  set role = 'admin'
+  where id = target_user_id;
+
+  -- Update auth.users metadata (optional but good for consistency)
+  update auth.users
+  set raw_user_meta_data = jsonb_set(raw_user_meta_data, '{role}', '"admin"')
+  where id = target_user_id;
+
+end;
+$$;
+ 
+ - -   0 0 0 4 _ e n h a n c e m e n t s . s q l  
+  
+ - -   1 .   E n h a n c e   U s e r   S t a t u s  
+ - -   W e   c a n ' t   e a s i l y   a l t e r   e n u m s   i n   a   t r a n s a c t i o n   b l o c k   i n   s o m e   t o o l s ,   b u t   s t a n d a r d   P G   a l l o w s   i t .  
+ - -   I f   t h i s   f a i l s   i n   t h e   c o m b i n e d   s c r i p t ,   w e   m i g h t   n e e d   t o   r e c r e a t e   t h e   t y p e .  
+ - -   F o r   n o w ,   l e t ' s   a s s u m e   w e   c a n   j u s t   a d d   c o l u m n s   a n d   m a y b e   u s e   t e x t   c h e c k   c o n s t r a i n t   i f   e n u m   i s   h a r d   t o   c h a n g e .  
+ - -   O r   j u s t   a d d   t h e   v a l u e .  
+ A L T E R   T Y P E   u s e r _ s t a t u s   A D D   V A L U E   I F   N O T   E X I S T S   ' f r o z e n ' ;  
+  
+ A L T E R   T A B L E   p u b l i c . u s e r s    
+ A D D   C O L U M N   I F   N O T   E X I S T S   f r e e z e _ r e a s o n   t e x t ,  
+ A D D   C O L U M N   I F   N O T   E X I S T S   d i s a b l e _ r e a s o n   t e x t ;  
+  
+ - -   2 .   M e s s a g e s   S y s t e m  
+ C R E A T E   T A B L E   I F   N O T   E X I S T S   p u b l i c . m e s s a g e s   (  
+         i d   u u i d   D E F A U L T   u u i d _ g e n e r a t e _ v 4 ( )   P R I M A R Y   K E Y ,  
+         s e n d e r _ i d   u u i d   R E F E R E N C E S   p u b l i c . u s e r s ( i d )   N O T   N U L L ,  
+         r e c e i v e r _ i d   u u i d   R E F E R E N C E S   p u b l i c . u s e r s ( i d )   N O T   N U L L ,  
+         o r d e r _ i d   u u i d   R E F E R E N C E S   p u b l i c . o r d e r s ( i d ) ,   - -   O p t i o n a l :   l i n k   t o   a n   o r d e r  
+         c o n t e n t   t e x t   N O T   N U L L ,  
+         i s _ r e a d   b o o l e a n   D E F A U L T   f a l s e ,  
+         c r e a t e d _ a t   t i m e s t a m p   w i t h   t i m e   z o n e   D E F A U L T   t i m e z o n e ( ' u t c ' : : t e x t ,   n o w ( ) )   N O T   N U L L  
+ ) ;  
+  
+ - -   R L S   f o r   M e s s a g e s  
+ A L T E R   T A B L E   p u b l i c . m e s s a g e s   E N A B L E   R O W   L E V E L   S E C U R I T Y ;  
+  
+ D R O P   P O L I C Y   I F   E X I S T S   " U s e r s   c a n   v i e w   t h e i r   o w n   m e s s a g e s "   O N   p u b l i c . m e s s a g e s ;  
+ C R E A T E   P O L I C Y   " U s e r s   c a n   v i e w   t h e i r   o w n   m e s s a g e s "   O N   p u b l i c . m e s s a g e s  
+         F O R   S E L E C T   U S I N G   ( a u t h . u i d ( )   =   s e n d e r _ i d   O R   a u t h . u i d ( )   =   r e c e i v e r _ i d ) ;  
+  
+ D R O P   P O L I C Y   I F   E X I S T S   " U s e r s   c a n   s e n d   m e s s a g e s "   O N   p u b l i c . m e s s a g e s ;  
+ C R E A T E   P O L I C Y   " U s e r s   c a n   s e n d   m e s s a g e s "   O N   p u b l i c . m e s s a g e s  
+         F O R   I N S E R T   W I T H   C H E C K   ( a u t h . u i d ( )   =   s e n d e r _ i d ) ;  
+  
+ - -   3 .   A u d i t   L o g s  
+ C R E A T E   T A B L E   I F   N O T   E X I S T S   p u b l i c . a u d i t _ l o g s   (  
+         i d   u u i d   D E F A U L T   u u i d _ g e n e r a t e _ v 4 ( )   P R I M A R Y   K E Y ,  
+         a d m i n _ i d   u u i d   R E F E R E N C E S   p u b l i c . u s e r s ( i d )   N O T   N U L L ,  
+         a c t i o n   t e x t   N O T   N U L L ,   - -   e . g . ,   ' d i s a b l e _ u s e r ' ,   ' r e f u n d _ o r d e r '  
+         t a r g e t _ i d   u u i d ,   - -   I D   o f   t h e   u s e r / o r d e r   b e i n g   a f f e c t e d  
+         d e t a i l s   j s o n b ,   - -   E x t r a   d e t a i l s   ( r e a s o n s ,   a m o u n t s )  
+         c r e a t e d _ a t   t i m e s t a m p   w i t h   t i m e   z o n e   D E F A U L T   t i m e z o n e ( ' u t c ' : : t e x t ,   n o w ( ) )   N O T   N U L L  
+ ) ;  
+  
+ - -   R L S   f o r   A u d i t   L o g s  
+ A L T E R   T A B L E   p u b l i c . a u d i t _ l o g s   E N A B L E   R O W   L E V E L   S E C U R I T Y ;  
+  
+ D R O P   P O L I C Y   I F   E X I S T S   " A d m i n s   c a n   v i e w   a u d i t   l o g s "   O N   p u b l i c . a u d i t _ l o g s ;  
+ C R E A T E   P O L I C Y   " A d m i n s   c a n   v i e w   a u d i t   l o g s "   O N   p u b l i c . a u d i t _ l o g s  
+         F O R   S E L E C T   U S I N G   ( E X I S T S   ( S E L E C T   1   F R O M   p u b l i c . u s e r s   W H E R E   i d   =   a u t h . u i d ( )   A N D   r o l e   =   ' a d m i n ' ) ) ;  
+  
+ D R O P   P O L I C Y   I F   E X I S T S   " A d m i n s   c a n   i n s e r t   a u d i t   l o g s "   O N   p u b l i c . a u d i t _ l o g s ;  
+ C R E A T E   P O L I C Y   " A d m i n s   c a n   i n s e r t   a u d i t   l o g s "   O N   p u b l i c . a u d i t _ l o g s  
+         F O R   I N S E R T   W I T H   C H E C K   ( E X I S T S   ( S E L E C T   1   F R O M   p u b l i c . u s e r s   W H E R E   i d   =   a u t h . u i d ( )   A N D   r o l e   =   ' a d m i n ' ) ) ;  
+  
+ - -   4 .   P a y o u t s   ( E n h a n c e m e n t )  
+ - -   E n s u r e   p a y o u t s   t a b l e   e x i s t s   ( i t   w a s   i n   c o m b i n e d   s e t u p   b u t   l e t ' s   m a k e   s u r e   p o l i c i e s   a r e   t h e r e )  
+ A L T E R   T A B L E   p u b l i c . p a y o u t s   E N A B L E   R O W   L E V E L   S E C U R I T Y ;  
+  
+ D R O P   P O L I C Y   I F   E X I S T S   " U s e r s   c a n   v i e w   o w n   p a y o u t s "   O N   p u b l i c . p a y o u t s ;  
+ C R E A T E   P O L I C Y   " U s e r s   c a n   v i e w   o w n   p a y o u t s "   O N   p u b l i c . p a y o u t s  
+         F O R   S E L E C T   U S I N G   ( a u t h . u i d ( )   =   u s e r _ i d ) ;  
+  
+ D R O P   P O L I C Y   I F   E X I S T S   " A d m i n s   c a n   v i e w   a l l   p a y o u t s "   O N   p u b l i c . p a y o u t s ;  
+ C R E A T E   P O L I C Y   " A d m i n s   c a n   v i e w   a l l   p a y o u t s "   O N   p u b l i c . p a y o u t s  
+         F O R   S E L E C T   U S I N G   ( E X I S T S   ( S E L E C T   1   F R O M   p u b l i c . u s e r s   W H E R E   i d   =   a u t h . u i d ( )   A N D   r o l e   =   ' a d m i n ' ) ) ;  
+  
+ - -   5 .   A d m i n   F u n c t i o n s   f o r   U s e r   M a n a g e m e n t  
+ C R E A T E   O R   R E P L A C E   F U N C T I O N   p u b l i c . a d m i n _ u p d a t e _ u s e r _ s t a t u s (  
+         t a r g e t _ u s e r _ i d   u u i d ,  
+         n e w _ s t a t u s   u s e r _ s t a t u s ,  
+         r e a s o n   t e x t   D E F A U L T   N U L L  
+ )  
+ R E T U R N S   v o i d  
+ L A N G U A G E   p l p g s q l  
+ S E C U R I T Y   D E F I N E R  
+ A S   $ $  
+ B E G I N  
+         - -   C h e c k   i f   e x e c u t o r   i s   a d m i n  
+         I F   N O T   E X I S T S   ( S E L E C T   1   F R O M   p u b l i c . u s e r s   W H E R E   i d   =   a u t h . u i d ( )   A N D   r o l e   =   ' a d m i n ' )   T H E N  
+                 R A I S E   E X C E P T I O N   ' A c c e s s   d e n i e d ' ;  
+         E N D   I F ;  
+  
+         U P D A T E   p u b l i c . u s e r s  
+         S E T    
+                 s t a t u s   =   n e w _ s t a t u s ,  
+                 f r e e z e _ r e a s o n   =   C A S E   W H E N   n e w _ s t a t u s   =   ' f r o z e n '   T H E N   r e a s o n   E L S E   f r e e z e _ r e a s o n   E N D ,  
+                 d i s a b l e _ r e a s o n   =   C A S E   W H E N   n e w _ s t a t u s   =   ' d i s a b l e d '   T H E N   r e a s o n   E L S E   d i s a b l e _ r e a s o n   E N D  
+         W H E R E   i d   =   t a r g e t _ u s e r _ i d ;  
+  
+         - -   L o g   a c t i o n  
+         I N S E R T   I N T O   p u b l i c . a u d i t _ l o g s   ( a d m i n _ i d ,   a c t i o n ,   t a r g e t _ i d ,   d e t a i l s )  
+         V A L U E S   ( a u t h . u i d ( ) ,   ' u p d a t e _ u s e r _ s t a t u s ' ,   t a r g e t _ u s e r _ i d ,   j s o n b _ b u i l d _ o b j e c t ( ' s t a t u s ' ,   n e w _ s t a t u s ,   ' r e a s o n ' ,   r e a s o n ) ) ;  
+ E N D ;  
+ $ $ ;  
+ 

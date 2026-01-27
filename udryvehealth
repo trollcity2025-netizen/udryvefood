@@ -1,0 +1,312 @@
+PROMPT START
+
+Clone the existing project UdryveFood into a new, completely separate project named UdryveHealth.
+Do NOT modify UdryveFood.
+UdryveHealth must reuse the same architecture, authentication, RBAC, admin tooling, routes/pages layout, and database patterns from UdryveFood, but adapt all business logic, UI, data models, and naming for a patient medication delivery marketplace.
+
+UdryveHealth is a platform where patients request medication delivery from pharmacies, delivered by drivers, with strict verification steps and admin oversight. The platform must NOT provide medical advice. It must support prescription handling workflows safely and legally (verification + audit logs).
+
+1) Roles (mirror UdryveFood structure)
+
+Implement these roles using the same RBAC patterns as UdryveFood:
+
+Admin
+
+Full access to all pages and data
+
+“View as/impersonate” Patient, Pharmacy, Driver
+
+Approve/deny pharmacy applications
+
+Disable/ban patients/pharmacies/drivers
+
+View and manage orders, payouts, disputes, compliance logs
+
+Configure system settings (delivery radius, fees, verification policies)
+
+Patient (Customer)
+
+Account + profile
+
+Addresses + delivery instructions
+
+Upload prescription or request refill
+
+Checkout + pay
+
+Track delivery on map
+
+Messaging with pharmacy + driver
+
+Order history
+
+Pharmacy (Partner/Store)
+
+Apply to register (approval required)
+
+Manage catalog for OTC items
+
+Prescription fulfillment workflow (not a marketplace listing like food)
+
+Accept/reject orders
+
+Verify prescription requirements
+
+Manage inventory + substitutions rules
+
+Payouts dashboard + statements
+
+Messaging with patient
+
+Driver
+
+Onboarding + approval + background check status field (flag)
+
+Accept deliveries, navigation via Google Maps
+
+Must handle ID verification steps where required
+
+Delivery status updates + proof of delivery
+
+Payouts dashboard
+
+2) Core Flows
+A) OTC Shopping Flow (like UdryveFood)
+
+Patient browses OTC products by pharmacy
+
+Add to cart, checkout, pay
+
+Pharmacy fulfills, driver delivers
+
+B) Prescription Delivery Flow (new)
+
+Patient initiates “Prescription Delivery” request via:
+
+Upload prescription images or PDF OR
+
+Enter Rx number (if supported by pharmacy) OR
+
+“Refill request” with medication name + pharmacy selection (requires pharmacy confirmation)
+
+Pharmacy reviews prescription request and either:
+
+Approves (fulfillable) and sets final price (copay + delivery)
+
+Requests additional info (message patient)
+
+Rejects with reason (policy-compliant)
+
+Checkout for prescription orders must be blocked until pharmacy approves and sets the final payable amount.
+
+3) Mandatory Verification Gates (Hard Requirements)
+
+Implement mandatory gates similar to UdryveAuto verification—checkout cannot proceed unless completed.
+
+Step 1: Patient identity/contact verification (required)
+
+Confirm patient name + phone number + delivery address
+
+Optional: add “Date of birth” field (store securely)
+
+Checkbox: confirm information is accurate
+
+Step 2: Prescription verification (required for Rx)
+
+Patient must provide prescription proof (upload) or Rx number
+
+System logs submission timestamp and files
+
+Pharmacy must verify in system before order can be finalized
+
+Step 3: Delivery verification (required for controlled/age-restricted items)
+
+Add a flag on products/orders: requires_id_check
+If true:
+
+Driver must confirm recipient ID check at delivery
+
+Capture “ID verified” checkbox + recipient name + signature (or PIN code)
+
+Proof-of-delivery required (photo optional only if allowed; otherwise signature/PIN)
+
+All verification actions must write to immutable audit logs with user_id, timestamp, and order_id.
+
+4) Messaging (must exist and be enforced)
+
+Clone UdryveFood messaging and enhance:
+
+Patient ↔ Pharmacy messaging thread per request/order
+
+Patient ↔ Driver messaging thread during delivery
+
+Admin can view all messages (policy + access logs)
+
+5) Admin Controls (must match UdryveFood + add compliance tools)
+
+Admin dashboard must include:
+
+All orders (OTC + Rx), filters by pharmacy/driver/status
+
+Pharmacy application approval queue
+
+Driver approval queue + verification flags
+
+Patient account management
+
+Ability to disable any user instantly
+
+Dispute management + refunds control
+
+Compliance/audit log viewer (verification events, access events)
+
+Admin must have a “View as” mode for Patient/Pharmacy/Driver pages.
+
+6) Payments & Payouts
+
+Use PayPal for:
+
+Patient payments (checkout)
+
+Pharmacy payouts
+
+Driver payouts
+Support platform fees:
+
+Delivery fee
+
+Service fee
+
+Optional pharmacy commission settings per pharmacy
+
+Refunds:
+
+Admin-controlled refunds only
+
+Pharmacy can request refund but admin approves/executes
+Log all refunds.
+
+7) Google Maps Only
+
+Use Google Maps for:
+
+Patient address selection/autocomplete
+
+Delivery routing
+
+Live driver tracking on order tracking page
+
+No other map provider.
+
+8) Pages Required (mirror UdryveFood)
+Public
+
+Home
+
+Search pharmacies
+
+Pharmacy page (hours, services, OTC catalog)
+
+OTC product page
+
+Cart/Checkout
+
+Prescription Delivery Request page
+
+Order tracking
+
+Patient Auth
+
+Dashboard
+
+Profile
+
+Addresses
+
+Prescription requests
+
+Orders
+
+Messages
+
+Payments
+
+Pharmacy Auth
+
+Dashboard
+
+OTC inventory management
+
+Prescription queue (approve/request info/reject)
+
+Orders
+
+Fulfillment status updates
+
+Messages
+
+Payouts
+
+Driver Auth
+
+Dashboard
+
+Available deliveries
+
+Active delivery (map + steps)
+
+Delivery verification screen (ID/signature/PIN)
+
+Earnings/Payouts
+
+Admin Auth
+
+Global dashboard
+
+Pharmacies
+
+Drivers
+
+Patients
+
+Orders
+
+Payouts
+
+Disputes/Refunds
+
+Audit/Compliance logs
+
+“View as” all roles
+
+9) Data Model Changes (add tables; keep core patterns)
+
+Add new entities while preserving UdryveFood structure:
+
+pharmacies (like restaurants but with license fields)
+
+otc_products (or reuse product table with category flags)
+
+prescriptions (upload references, rx_request metadata)
+
+verification_events (order_id, type, actor_id, payload JSON, created_at)
+
+delivery_proofs (order_id, signature/PIN status, id_verified, notes)
+
+compliance_access_logs (admin viewing messages/prescription files)
+
+Ensure strict access control: pharmacies only see their own orders; drivers only see assigned orders; patients only see their own.
+
+10) Non-Negotiables
+
+UdryveFood remains untouched
+
+UdryveHealth is a separate clone repository/project
+
+Enforce verification gates (no bypass)
+
+No medical advice features
+
+Full audit logs for sensitive actions
+
+Admin “view as” all roles![alt text](image-1.png)
