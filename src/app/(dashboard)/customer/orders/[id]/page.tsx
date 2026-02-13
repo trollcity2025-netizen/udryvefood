@@ -3,8 +3,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft, MapPin, Phone } from 'lucide-react';
 
-export default async function OrderDetailsPage({ params }: { params: { id: string } }) {
-  const supabase = createClient();
+export default async function OrderDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
@@ -22,7 +23,7 @@ export default async function OrderDetailsPage({ params }: { params: { id: strin
         menu_item:menu_items(*)
       )
     `)
-    .eq('id', params.id)
+    .eq('id', id)
     .single();
 
   if (!order) {

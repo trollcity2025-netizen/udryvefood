@@ -1,9 +1,19 @@
 -- Create storage buckets if they don't exist
-insert into storage.buckets (id, name, public)
-values 
-  ('driver-documents', 'driver-documents', false),
-  ('avatars', 'avatars', true)
-on conflict (id) do nothing;
+DO $$
+BEGIN
+    INSERT INTO storage.buckets (id, name, public)
+    VALUES 
+      ('driver-documents', 'driver-documents', false),
+      ('avatars', 'avatars', true)
+    ON CONFLICT (id) DO NOTHING;
+EXCEPTION
+    WHEN undefined_column THEN
+        INSERT INTO storage.buckets (id, name)
+        VALUES 
+          ('driver-documents', 'driver-documents'),
+          ('avatars', 'avatars')
+        ON CONFLICT (id) DO NOTHING;
+END $$;
 
 -- RLS for storage objects
 

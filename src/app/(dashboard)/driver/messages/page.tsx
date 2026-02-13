@@ -1,3 +1,8 @@
-export default function Page() {
-  return <div className="p-6"><h1 className="text-2xl font-bold">Messages</h1><p>Chat with customers and support.</p></div>;
+'use client';
+
+import MessagesLayout from '@/components/chat/MessagesLayout';
+
+export default function DriverMessagesPage() {
+  return <MessagesLayout role="driver" />;
 }
+

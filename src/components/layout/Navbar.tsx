@@ -16,6 +16,9 @@ export default function Navbar() {
   const [user, setUser] = useState<any>(null);
   const supabase = createClient();
   const router = useRouter();
+  
+  // Safe access to avatar url
+  const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
 
   useEffect(() => {
     const getUser = async () => {

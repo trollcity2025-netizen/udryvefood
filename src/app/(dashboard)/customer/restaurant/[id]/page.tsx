@@ -5,9 +5,9 @@ import { MapPin, Star, Clock, Info } from 'lucide-react';
 import MenuItemCard from '@/components/menu/MenuItemCard';
 
 interface PageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 export default async function RestaurantPage({ params }: PageProps) {

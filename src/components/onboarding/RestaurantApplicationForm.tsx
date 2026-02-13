@@ -2,7 +2,7 @@
 
 import { useForm } from 'react-hook-form';
 import { createClient } from '@/utils/supabase/client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function RestaurantApplicationForm() {

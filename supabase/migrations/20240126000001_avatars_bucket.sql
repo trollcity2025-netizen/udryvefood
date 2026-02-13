@@ -1,12 +1,28 @@
 -- Create avatars bucket if it doesn't exist
-insert into storage.buckets (id, name, public)
-values ('avatars', 'avatars', true)
-on conflict (id) do nothing;
+DO $$
+BEGIN
+    INSERT INTO storage.buckets (id, name, public)
+    VALUES ('avatars', 'avatars', true)
+    ON CONFLICT (id) DO NOTHING;
+EXCEPTION
+    WHEN undefined_column THEN
+        INSERT INTO storage.buckets (id, name)
+        VALUES ('avatars', 'avatars')
+        ON CONFLICT (id) DO NOTHING;
+END $$;
 
 -- Create delivery-proofs bucket if it doesn't exist (private)
-insert into storage.buckets (id, name, public)
-values ('delivery-proofs', 'delivery-proofs', false)
-on conflict (id) do nothing;
+DO $$
+BEGIN
+    INSERT INTO storage.buckets (id, name, public)
+    VALUES ('delivery-proofs', 'delivery-proofs', false)
+    ON CONFLICT (id) DO NOTHING;
+EXCEPTION
+    WHEN undefined_column THEN
+        INSERT INTO storage.buckets (id, name)
+        VALUES ('delivery-proofs', 'delivery-proofs')
+        ON CONFLICT (id) DO NOTHING;
+END $$;
 
 -- POLICY: Allow public read access to avatars
 create policy "Avatar images are publicly accessible"
@@ -50,7 +66,13 @@ create policy "Admins can view all proofs"
 -- actually, I'll stick to private and assume we might need to change 'proof_photo_url' handling to generate signed url on fetch, OR just make it public for now to unblock.
 -- Let's make it public for now to ensure the feature works smoothly without complex signing logic.
 
-update storage.buckets set public = true where id = 'delivery-proofs';
+DO $$
+BEGIN
+    UPDATE storage.buckets SET public = true WHERE id = 'delivery-proofs';
+EXCEPTION
+    WHEN undefined_column THEN
+        NULL;
+END $$;
 
 drop policy if exists "Drivers can upload delivery proofs" on storage.objects;
 create policy "Drivers can upload delivery proofs"

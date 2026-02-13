@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation';
 import MenuItemCard from '@/components/menu/MenuItemCard';
 import { DEMO_RESTAURANTS, DEMO_MENU_ITEMS } from '@/data/demoRestaurants';
 
-export default async function RestaurantPage({ params }: { params: { id: string } }) {
+export default async function RestaurantPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
 

@@ -3,6 +3,18 @@ import { createClient } from '@/utils/supabase/server';
 
 async function getGoogleRoute(originLat: number, originLng: number, destLat: number, destLng: number) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const isMock = !apiKey || apiKey === 'YOUR_GOOGLE_MAPS_API_KEY';
+
+  if (isMock) {
+    // Return mock route data
+    const mockMiles = 3.5;
+    return {
+      miles: mockMiles,
+      roundedMiles: 3.5,
+      polyline: 'mock_polyline_data'
+    };
+  }
+
   if (!apiKey) {
     throw new Error('GOOGLE_MAPS_API_KEY is not configured');
   }

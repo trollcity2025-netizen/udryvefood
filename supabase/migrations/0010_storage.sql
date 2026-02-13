@@ -1,7 +1,15 @@
 -- Create storage bucket for applications
-insert into storage.buckets (id, name, public)
-values ('applications', 'applications', false)
-on conflict (id) do nothing;
+DO $$
+BEGIN
+    INSERT INTO storage.buckets (id, name, public)
+    VALUES ('applications', 'applications', false)
+    ON CONFLICT (id) DO NOTHING;
+EXCEPTION
+    WHEN undefined_column THEN
+        INSERT INTO storage.buckets (id, name)
+        VALUES ('applications', 'applications')
+        ON CONFLICT (id) DO NOTHING;
+END $$;
 
 -- Policies for storage
 -- Drivers can upload to their own folder

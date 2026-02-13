@@ -170,7 +170,7 @@ export default function ApplicationDetailsPage() {
                  <button
                  onClick={() => {
                      const reason = prompt('Enter note for user (optional):');
-                     if (reason !== null) updateStatus('under_review', reason);
+                     if (reason !== null) updateStatus('changes_requested', reason);
                  }}
                  disabled={processing}
                  className="flex items-center px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50"

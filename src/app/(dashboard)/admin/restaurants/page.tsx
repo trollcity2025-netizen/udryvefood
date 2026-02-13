@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { Search, MapPin, Star, MoreVertical } from 'lucide-react';
+import { Search, MapPin, Star, MoreVertical, Store } from 'lucide-react';
 
 export default function AdminRestaurants() {
   const [restaurants, setRestaurants] = useState<any[]>([]);
@@ -54,7 +54,7 @@ export default function AdminRestaurants() {
                          <img src={restaurant.image_url} alt="" className="h-full w-full object-cover" />
                        ) : (
                          <div className="h-full w-full flex items-center justify-center text-slate-400">
-                           <StoreIcon />
+                           <Store />
                          </div>
                        )}
                     </div>

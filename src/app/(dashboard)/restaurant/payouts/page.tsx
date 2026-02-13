@@ -6,6 +6,7 @@ import { DollarSign, Calendar, TrendingUp } from 'lucide-react';
 
 export default function PayoutsPage() {
   const [orders, setOrders] = useState<any[]>([]);
+  const [payouts, setPayouts] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalEarnings: 0,
     pendingPayout: 0,
@@ -22,22 +23,46 @@ export default function PayoutsPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data } = await supabase
+    // Fetch orders
+    const { data: ordersData } = await supabase
       .from('orders')
       .select('*')
       .eq('restaurant_id', user.id)
       .eq('status', 'delivered')
       .order('created_at', { ascending: false });
 
-    if (data) {
-        setOrders(data);
-        const total = data.reduce((acc, order) => acc + order.total_amount, 0);
+    // Fetch payouts
+    const { data: payoutsData } = await supabase
+      .from('payouts')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (ordersData && payoutsData) {
+        setOrders(ordersData);
+        setPayouts(payoutsData);
+
+        const totalEarnings = ordersData.reduce((acc, order) => acc + order.total_amount, 0);
+        const paidOut = payoutsData
+            .filter((p: any) => p.status === 'completed')
+            .reduce((acc: any, p: any) => acc + p.amount, 0);
+
         setStats({
-            totalEarnings: total,
-            pendingPayout: total, // Assuming no payout system yet, all is pending
+            totalEarnings,
+            pendingPayout: totalEarnings - paidOut,
+            paidOut
+        });
+    } else if (ordersData) {
+        // Fallback if no payouts table or data yet
+        setOrders(ordersData);
+        const totalEarnings = ordersData.reduce((acc, order) => acc + order.total_amount, 0);
+        setStats({
+            totalEarnings,
+            pendingPayout: totalEarnings,
             paidOut: 0
         });
     }
+    
     setLoading(false);
   };
 
@@ -77,7 +102,7 @@ export default function PayoutsPage() {
             <div className="flex justify-between items-start">
                 <div>
                     <p className="text-sm font-medium text-slate-500">Last Payout</p>
-                    <p className="text-3xl font-bold text-slate-900 mt-2">$0.00</p>
+                    <p className="text-3xl font-bold text-slate-900 mt-2">${stats.paidOut.toFixed(2)}</p>
                 </div>
                 <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
                     <Calendar size={24} />
@@ -86,9 +111,33 @@ export default function PayoutsPage() {
         </div>
       </div>
 
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-8">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+            <h3 className="font-semibold text-slate-900">Payout History</h3>
+        </div>
+        <div className="divide-y divide-slate-100">
+            {payouts.length === 0 ? (
+                <div className="p-8 text-center text-slate-500">No payouts received yet.</div>
+            ) : (
+                payouts.map((payout) => (
+                    <div key={payout.id} className="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                        <div>
+                            <p className="font-medium text-slate-900">{payout.status === 'completed' ? 'Payout Sent' : 'Processing'}</p>
+                            <p className="text-sm text-slate-500">{new Date(payout.created_at).toLocaleDateString()}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="font-bold text-slate-900">${payout.amount.toFixed(2)}</p>
+                            <p className="text-xs text-slate-500 capitalize">{payout.method || 'Bank Transfer'}</p>
+                        </div>
+                    </div>
+                ))
+            )}
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-            <h3 className="font-semibold text-slate-900">Transaction History</h3>
+            <h3 className="font-semibold text-slate-900">Recent Transactions</h3>
         </div>
         <div className="divide-y divide-slate-100">
             {orders.length === 0 ? (
